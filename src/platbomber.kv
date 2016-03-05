@@ -6,3 +6,22 @@
             id: background
             size: root.size
             source: "imgs/Clouds_RJ1_2613.jpg"
+                 
+
+    
+<Platform>:
+    color: 0., 1., 0.4, .4
+    
+    #size: 100, 500
+    size_hint: None, None
+   # pos: 10,20
+    canvas.after:
+        
+        Color:
+            rgba: self.color
+        Rectangle:
+            size: root.size
+            pos: root.pos
+    
+        
+        
