@@ -14,6 +14,7 @@ from kivy.uix.widget import Widget
 from kivy.uix.button import Button
 import itertools
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.label import Label
 sm = ScreenManager()
 
 KEYS = defaultdict(lambda: None)
@@ -30,17 +31,26 @@ class Sprite(Image):
         self.resting=True
         
     
-    def update(self, plats=[]):
+    def update(self, plats=[],):
         self.velocity_y -= 2
         self.x += self.velocity_x
-        self.y += self.velocity_y
         
         for plat in plats:
-            if (plat.y+plat.size[1]) > self.y: #hit from below
+            if not plat.collide_widget(self): continue
+            if self.velocity_x > 0:
+                self.right = plat.x - 1
+            else:
+                self.x = plat.right + 1
+        
+        self.y += self.velocity_y
+        for plat in plats:
+            if not plat.collide_widget(self): continue
+            if self.velocity_y > 0:
+                self.top = plat.y - 1
+            else:
+                self.y = plat.top  + 1
                 self.resting = True
                 self.velocity_y = 0
-                self.y = plat.y+plat.size[1]
-
         
 class Bomberman(Sprite):
     def __init__(self, **kwargs):
@@ -48,6 +58,8 @@ class Bomberman(Sprite):
                                         **kwargs)
         
         self.bombs = 1
+        
+        #Image.canvas
         
         
     def update(self, plats, keys=KEYS):
@@ -63,12 +75,14 @@ class Bomberman(Sprite):
         if keys[32] and self.bombs:
             self.bombs -= 1
             self.game.place_bomb(self)
-            
+        if self.velocity_y < -10: self.velocity_y = -10
         super(Bomberman, self).update(plats)
                 
             
 
-        
+    def bomb_done(self, bomb):
+        self.bombs += 1
+        self.game.remove_bomb(bomb)
         
 
 
@@ -95,10 +109,28 @@ class GlobalStuff(object):
 
 class Bomb(Sprite):
     
-    def __init__(self, **kws):
+    def __init__(self, owner, **kws):
         super(Bomb, self).__init__(source='imgs/bomb.png'
                                    
                                    ,**kws)
+        self.owner = owner
+        self.count = 70
+        
+    def blast(self):
+        self.source = 'imgs/blast.png'
+        
+    
+    def update(self, plats=[],):
+        Sprite.update(self, plats=plats,)
+        self.count -= 1
+        if self.count == 0:
+            self.blast()
+        if self.count == -50:
+            self.owner.bomb_done(self) 
+        
+    
+    
+        
 
 
 class Game(Screen):
@@ -110,6 +142,8 @@ class Game(Screen):
                                   center_x=GlobalStuff.center_x,
                                   center_y=GlobalStuff.center_y,
                                    size=(50,50)) for i in range(5)]
+        self.label = Label(text="FPS: ?", pos=(125, 125))
+        
         self.bombs = []
         for p in self.players:
             self.area.add_widget(p)
@@ -117,35 +151,60 @@ class Game(Screen):
         self.platforms = []
         floor = Platform(x= 0,
                          y = 0, 
-                         size=(GlobalStuff.width*1.2, 50)
+                         size=(GlobalStuff.width*1.0, 50)
                          )
+        walls = (Platform(x=0,y=0, size=(50, GlobalStuff.height)),
+                 Platform(x=0,y=GlobalStuff.height-50, size=(GlobalStuff.width*1.0, 50)),
+                 Platform(x=GlobalStuff.width-50,y=0, size=(50, GlobalStuff.height)),
+                 ) 
      
         self.platforms.append(floor)
+        self.platforms.extend(walls)
         for plat in self.platforms:
             self.area.add_widget(plat)
+        self.count = 0
+        self.frames_count = 0
         Clock.schedule_interval(self._update, 1.0/36)
+        self.add_widget(self.label)
         
     def _update(self, dt=None, keys= KEYS):
         
+        self.count += dt
+        self.frames_count += 1
+        plats = self.platforms
         for p in itertools.chain(self.players, self.bombs):
-            print p, p.pos, p.center_x
-            plats = []
-            for plat in self.platforms:
-                if plat.collide_widget(p):
-                    plats.append(plat)
+            #print p, p.pos, p.center_x
+            
+           
                     
             p.update(plats)
-        
+        if self.count > 1.0:
+            self.label.text = "FPS: %.1f" % (self.frames_count / self.count)
+            self.count = self.frames_count = 0.0
             
     def place_bomb(self, player):
-        bomb = Bomb(game=self, size=[player.width/2, player.height/ 2])
+        bomb = Bomb(owner=player, game=self, size=[player.width/2, player.height/ 2])
         bomb.center_x = player.center_x
         bomb.center_y = player.center_y
         self.area.add_widget(bomb)
         self.bombs.append(bomb)
+        #bomb.start_counting()
+        
+    def remove_bomb(self, bomb):
+        self.bombs.remove(bomb)
+        self.area.remove_widget(bomb)
             
 
 class PlatBomberApp(App):
+    def on_start(self):
+        import cProfile
+        self.profile = cProfile.Profile()
+        self.profile.enable()
+
+    def on_stop(self):
+        self.profile.disable()
+        self.profile.dump_stats('myapp.profile')
+    
     def build(self):
         def on_key_down(window, keycode, *rest):
             KEYS[keycode] = True
